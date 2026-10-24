@@ -1,0 +1,203 @@
+# Acme Corp: an enterprise network built from Docker networks and containers.
+# Start it with ./lab.sh up (which builds the image and makes the VPN keys first).
+#
+# Every Docker network below is one network segment (a Linux bridge on the host,
+# named acme-*), and every container is one box. Routers are simply containers attached
+# to several segments, with IP forwarding on. See README.md for the diagram.
+
+x-node: &node
+  image: acme-netbox:lab
+  pull_policy: never
+  init: true
+  entrypoint: ["/lab/entrypoint.sh"]
+  cap_add: [NET_ADMIN, NET_RAW]
+  volumes:
+    - ./node:/lab:ro
+    - ./state:/state:ro
+  stop_grace_period: 2s
+
+x-router: &router
+  <<: *node
+  cap_add: [NET_ADMIN, NET_RAW, SYS_ADMIN]
+  sysctls:
+    net.ipv4.ip_forward: 1
+
+# Staff machines browse through the proxy, like a corporate laptop with a proxy policy.
+x-staff-proxy: &staff_proxy
+  http_proxy: http://proxy.corp.acme:3128
+  https_proxy: http://proxy.corp.acme:3128
+  no_proxy: corp.acme,acme.example,localhost,127.0.0.1,10.0.0.0/8,172.16.0.0/12
+
+services:
+  # ---------------------------------------------------------------- HQ: edge and core
+  edge-fw:
+    <<: *router
+    container_name: edge-fw
+    hostname: edge-fw
+    environment:
+      ROLE: edge
+      GW: 203.0.113.1
+      LINKS: inet=203.0.113.10 dmz=172.16.10.1 transit=10.255.0.1
+    networks:
+      inet: { ipv4_address: 203.0.113.10 }
+      dmz: { ipv4_address: 172.16.10.1 }
+      transit: { ipv4_address: 10.255.0.1 }
+
+  core-rtr:
+    <<: *router
+    container_name: core-rtr
+    hostname: core-rtr
+    environment:
+      ROLE: core
+      LINKS: transit=10.255.0.2 users=10.10.10.1 servers=10.10.20.1 mgmt=10.10.99.1
+    networks:
+      transit: { ipv4_address: 10.255.0.2 }
+      users: { ipv4_address: 10.10.10.1 }
+      servers: { ipv4_address: 10.10.20.1 }
+      mgmt: { ipv4_address: 10.10.99.1 }
+
+  # ---------------------------------------------------------------- HQ: servers
+  dns:
+    <<: *node
+    container_name: dns
+    hostname: dns
+    environment: { ROLE: dns, GW: 10.10.20.1, DNS: 10.10.20.10, LINKS: servers=10.10.20.10 }
+    networks:
+      servers: { ipv4_address: 10.10.20.10 }
+
+  intranet:
+    <<: *node
+    container_name: intranet
+    hostname: intranet
+    environment: { ROLE: web, SITE: intranet, GW: 10.10.20.1, DNS: 10.10.20.10, LINKS: servers=10.10.20.20 }
+    networks:
+      servers: { ipv4_address: 10.10.20.20 }
+
+  # ---------------------------------------------------------------- HQ: DMZ
+  www:
+    <<: *node
+    container_name: www
+    hostname: www
+    environment: { ROLE: web, SITE: public, GW: 172.16.10.1, DNS: 1.1.1.1, LINKS: dmz=172.16.10.10 }
+    networks:
+      dmz: { ipv4_address: 172.16.10.10 }
+
+  proxy:
+    <<: *node
+    container_name: proxy
+    hostname: proxy
+    environment: { ROLE: proxy, GW: 172.16.10.1, DNS: 1.1.1.1, LINKS: dmz=172.16.10.20 }
+    networks:
+      dmz: { ipv4_address: 172.16.10.20 }
+
+  # ---------------------------------------------------------------- HQ: people
+  ws1:
+    <<: *node
+    container_name: ws1
+    hostname: ws1
+    environment:
+      <<: *staff_proxy
+      ROLE: host
+      GW: 10.10.10.1
+      DNS: 10.10.20.10
+      LINKS: users=10.10.10.11
+    networks:
+      users: { ipv4_address: 10.10.10.11 }
+
+  ws2:
+    <<: *node
+    container_name: ws2
+    hostname: ws2
+    environment:
+      <<: *staff_proxy
+      ROLE: host
+      GW: 10.10.10.1
+      DNS: 10.10.20.10
+      LINKS: users=10.10.10.12
+    networks:
+      users: { ipv4_address: 10.10.10.12 }
+
+  jumpbox:
+    <<: *node
+    container_name: jumpbox
+    hostname: jumpbox
+    environment: { ROLE: host, GW: 10.10.99.1, DNS: 10.10.20.10, LINKS: mgmt=10.10.99.10 }
+    networks:
+      mgmt: { ipv4_address: 10.10.99.10 }
+
+  # ---------------------------------------------------------------- branch office
+  branch-fw:
+    <<: *router
+    container_name: branch-fw
+    hostname: branch-fw
+    environment:
+      ROLE: branch
+      LINKS: inet=203.0.113.20 lan=10.20.10.1
+    networks:
+      inet: { ipv4_address: 203.0.113.20 }
+      branch: { ipv4_address: 10.20.10.1 }
+
+  bws1:
+    <<: *node
+    container_name: bws1
+    hostname: bws1
+    environment:
+      <<: *staff_proxy
+      ROLE: host
+      GW: 10.20.10.1
+      DNS: 10.10.20.10
+      LINKS: lan=10.20.10.11
+    networks:
+      branch: { ipv4_address: 10.20.10.11 }
+
+  # ---------------------------------------------------------------- on the internet
+  remote:
+    <<: *node
+    container_name: remote
+    hostname: remote
+    environment: { ROLE: remote, GW: 203.0.113.1, DNS: 1.1.1.1, LINKS: inet=203.0.113.50 }
+    networks:
+      inet: { ipv4_address: 203.0.113.50 }
+
+# Docker reserves one address per network for the host's end of the bridge. It's .254
+# here, so .1 is free for the enterprise router, as on a real network. Only `inet` lets
+# Docker NAT traffic out to the real internet; on every internal segment Docker's NAT is
+# off, so the only way out is through edge-fw, as it should be.
+x-internal: &internal
+  driver: bridge
+networks:
+  inet:
+    name: acme-inet
+    driver: bridge
+    driver_opts: { com.docker.network.bridge.name: acme-inet }
+    ipam: { config: [{ subnet: 203.0.113.0/24, gateway: 203.0.113.1 }] }
+  dmz:
+    <<: *internal
+    name: acme-dmz
+    driver_opts: { com.docker.network.bridge.name: acme-dmz, com.docker.network.bridge.enable_ip_masquerade: "false" }
+    ipam: { config: [{ subnet: 172.16.10.0/24, gateway: 172.16.10.254 }] }
+  transit:
+    <<: *internal
+    name: acme-transit
+    driver_opts: { com.docker.network.bridge.name: acme-transit, com.docker.network.bridge.enable_ip_masquerade: "false" }
+    ipam: { config: [{ subnet: 10.255.0.0/24, gateway: 10.255.0.254 }] }
+  users:
+    <<: *internal
+    name: acme-users
+    driver_opts: { com.docker.network.bridge.name: acme-users, com.docker.network.bridge.enable_ip_masquerade: "false" }
+    ipam: { config: [{ subnet: 10.10.10.0/24, gateway: 10.10.10.254 }] }
+  servers:
+    <<: *internal
+    name: acme-servers
+    driver_opts: { com.docker.network.bridge.name: acme-servers, com.docker.network.bridge.enable_ip_masquerade: "false" }
+    ipam: { config: [{ subnet: 10.10.20.0/24, gateway: 10.10.20.254 }] }
+  mgmt:
+    <<: *internal
+    name: acme-mgmt
+    driver_opts: { com.docker.network.bridge.name: acme-mgmt, com.docker.network.bridge.enable_ip_masquerade: "false" }
+    ipam: { config: [{ subnet: 10.10.99.0/24, gateway: 10.10.99.254 }] }
+  branch:
+    <<: *internal
+    name: acme-branch
+    driver_opts: { com.docker.network.bridge.name: acme-branch, com.docker.network.bridge.enable_ip_masquerade: "false" }
+    ipam: { config: [{ subnet: 10.20.10.0/24, gateway: 10.20.10.254 }] }
