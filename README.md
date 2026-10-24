@@ -22,6 +22,41 @@ phase2/                         FDE integration (~10–12 weeks)
 └── CASE_STUDY.md   2.4  the one-pager (fill in from real numbers)
 ```
 
+## Practice in this order
+Each stage uses what the one before it taught. The folder layout above groups code by topic,
+so follow this list, not the tree. Each chapter's README has the concepts, exercises and
+"check yourself" questions. A stage is done when its **Done when** line is true.
+
+**Where things run:** 🍎 = your Mac works (no root needed), 🐧 = the Ubuntu EC2 box (root needed
+for the lab and live capture). Build once per machine: `cd phase1 && cmake -B build && cmake --build build -j`.
+
+### Phase 1: network fundamentals
+| # | Chapter | Where | Do | Done when |
+|---|---|---|---|---|
+| 1 | [tcpdump-basics](phase1/tcpdump-basics/README.md) | 🍎, then 🐧 for ex. 5 | Parts 1-3 (MAC/IP/port addressing, tcpdump, Wireshark), then exercises 1-5 | you can read any line of `tcpdump -n` output aloud, and you've filled in exercise 5's table from your own EC2 capture |
+| 2 | [socket-basics](phase1/socket-basics/README.md) | 🍎 or 🐧 | steps 1→6 in order, each in `exercises/` | `python3 socket-basics/check.py <step>` passes for every step. Then compare yours with `solutions/` |
+| 3 | [netns-router](phase1/netns-router/README.md) | 🐧 | `sudo ./setup.sh && sudo ./test.sh`, then exercises 1-4 | `test.sh` passes, and you can explain why each exercise broke what it broke. Paste the output into its README |
+| 4 | [echo-server](phase1/echo-server/README.md) | 🍎 ex. 1-2, 🐧 ex. 3-4 | read `echo_server_blocking.cpp` (socket-basics step 3, grown up), then `echo_server_epoll.cpp` (step 6 with epoll); exercises 1-4 | you've annotated a handshake capture and seen both zero windows in exercise 3 |
+| 5 | [dns-resolver](phase1/dns-resolver/README.md) | 🍎 or 🐧 | read `src/dns.cpp` (wire format), exercises 1-4 | you can explain a `+trace` run hop by hop |
+| 6 | [udp-ping](phase1/udp-ping/README.md) | 🐧 (the lab) | exercises 1-3 with netem | your measured loss and RTT match what you injected, and you can say why exercise 3's loss nearly doubles |
+| 7 | [mini-tcpdump](phase1/mini-tcpdump/README.md) | 🍎 `-r` on files, 🐧 live | read `src/core/` layer by layer, then exercises 1-4 | its per-flow report matches what you see in Wireshark for the same pcap |
+| 8 | [casebook](phase1/casebook/README.md) | 🐧 | `sudo casebook/run_case.sh all 5` (5 runs per case, so the evals can hold some out); for each case, diagnose the capture yourself *before* reading `diagnoses/<case>.md` | `labels.json` has 50 captures, and you've added your own observations to each diagnosis |
+
+Two habits for every stage after 1:
+- **Capture it.** Whenever a program sends something, watch it with tcpdump or Wireshark. The
+  exercises tell you where to look, but make it a reflex.
+- **Answer the "check yourself" questions before opening the answers.** They're the part
+  interviewers ask about.
+
+### Phase 2: the FDE project (needs stage 8's captures)
+| # | Part | Where | Do | Done when |
+|---|---|---|---|---|
+| 9 | [PacketWhisperer](phase2/packetwhisperer/README.md) | 🍎 or 🐧 | set it up, `pytest`, then diagnose a few casebook pcaps with the rules engine only (no API key) | tests pass, and you know which casebook cases the rules get right |
+| 10 | [evals](phase2/packetwhisperer/evals/README.md) | 🐧 | rules baseline on the real casebook, then one LLM run (it costs API credits: check the README first) | per-label accuracy numbers recorded, from real runs only |
+| 11 | [deploy](phase2/deploy/README.md) | 🐧 | `docker compose up` behind Caddy, then Slack alerts | the service answers over HTTPS from your laptop |
+| 12 | [pilot](phase2/deploy/PILOT.md) | n/a | find one real user and scope a problem with them | they've used it on a real problem at least once |
+| 13 | [case study](phase2/CASE_STUDY.md) | n/a | fill in every `[X]` from measured numbers | no placeholders left. Then update the resume entry in CLAUDE.md |
+
 ## Quick start (Ubuntu, e.g. the EC2 box)
 ```bash
 sudo apt install -y build-essential cmake libpcap-dev python3-venv curl openssl

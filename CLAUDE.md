@@ -107,4 +107,4 @@ One page: problem → user → shipped → impact (tickets deflected, accuracy, 
 Pairing advice: one AI/user-facing project (NetCopilot or CampusPulse) + one C++-depth project (MeshCast or LoadLens).
 
 ## Where to start
-Begin with **Phase 1.1 (namespace router)**, then 1.2 (epoll echo server). Ask the learner which Linux environment they have (native, WSL2, or VM) before writing setup scripts.
+Follow the practice order in README.md: 1.0 tcpdump-basics and 1.0b socket-basics come first, then 1.1 (namespace router) and 1.2 (epoll echo server). Ask the learner which Linux environment they have (native, WSL2, or VM) before writing setup scripts.

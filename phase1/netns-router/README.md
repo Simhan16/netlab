@@ -172,18 +172,6 @@ would recover?
 <details><summary>Answer</summary>You asked ping to send exactly 1300 bytes with DF; it can't
 shrink a datagram you sized. TCP chooses its own segment sizes, so it just sends smaller ones.</details>
 
-## Sample output
-<!-- Paste the real output of `sudo ./test.sh` from your instance here. -->
-```
-[paste test.sh output]
-```
-
-## Exercises (good tcpdump practice for 1.4)
-1. Run `tcpdump -ni r-b` in the router while lan-b pings lan-a. The requests arrive and nothing comes back. Then watch the DROP counter climb in `iptables -L FORWARD -v`.
-2. Run `tcpdump -ni ens5 icmp` on the host while lan-a pings 1.1.1.1. The source is the instance IP, not 192.168.10.10. That's NAT.
-3. Delete the host return route (`ip route del 192.168.10.0/24`) and see which hop the replies die at.
-4. Set the MTU on `r-up` to 1000 and try `curl` again. This is a preview of the Casebook's MTU black hole.
-
 ## Known limitations
 - The firewall filters only FORWARD. lan-b can still ping the router's lan-a-side address (192.168.10.1), because packets to the router itself go through INPUT. Try it and explain why.
 - IPv4 only. No DHCP: addresses are static.
