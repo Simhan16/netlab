@@ -26,16 +26,83 @@ and there's no per-probe state. Replies are classified as:
 
 Jitter is the RFC 3550 estimator: a running average of |RTT(n) − RTT(n−1)| with gain 1/16.
 
-## Experiments (in the netns lab)
+## Exercises (in the netns lab)
+Start the lab (`sudo ../netns-router/setup.sh`) and a server in lan-b:
 ```bash
 sudo ip netns exec lan-b ./build/udp-ping/udp_pong &
-sudo ip netns exec router tc qdisc add dev r-b root netem delay 50ms 20ms loss 5%
-sudo ip netns exec lan-a ./build/udp-ping/udp_ping 192.168.20.10 -c 100 -i 50
+```
+`tc ... netem` injects delay, jitter and loss. It's a **queueing discipline** on an
+interface's *outgoing* queue, so it only affects packets leaving through that interface.
+
+### 1. Measure what you injected
+**Concept:** RTT, loss and jitter are the three numbers that decide whether real-time apps
+(calls, games) feel OK. Impairments are usually **one-directional**, but RTT always covers
+both directions.
+
+**Try it:**
+```bash
+sudo ip netns exec router tc qdisc add dev r-b root netem delay 50ms 10ms loss 5%
+sudo ip netns exec lan-a ./build/udp-ping/udp_ping 192.168.20.10 -c 200 -i 50
+```
+**What you should see:** average RTT around 50 ms, ranging roughly 40-60 ms, loss near 5%
+(it's random, so 200 probes give a noisy estimate), and a jitter value of a few ms.
+
+**Why:** netem on `r-b` only touches probes going *to* lan-b. Replies leave the router through
+`r-a`, unimpaired. The whole 50 ms and 5% come from one direction.
+
+**Check yourself:** with only round-trip numbers, can you tell which direction is lossy?
+<details><summary>Answer</summary>No. A lost probe and a lost reply look identical to the
+sender. Capture on both ends (or on the router, per interface) to find out, which is the same
+reason the casebook records its capture point.</details>
+
+### 2. Make the network reorder packets
+**Concept:** **reordering** means packets arrive in a different order than they were sent.
+It breaks naive protocols, and TCP can mistake it for loss.
+
+**Try it:**
+```bash
+sudo ip netns exec router tc qdisc change dev r-b root netem delay 50ms 20ms
+sudo ip netns exec lan-a ./build/udp-ping/udp_ping 192.168.20.10 -c 200 -i 50   # few or none
+sudo ip netns exec lan-a ./build/udp-ping/udp_ping 192.168.20.10 -c 200 -i 5    # many "out of order"
+```
+**What you should see:** at 50 ms spacing there's little or no reordering. At 5 ms the
+`reordered` count jumps.
+
+**Why:** netem gives each packet its own random delay (30-70 ms). When packets are sent 5 ms
+apart, a later one can easily draw a shorter delay and overtake an earlier one. At 50 ms
+apart they almost never can.
+
+**Check yourself:** real single-path networks reorder rarely. Where does real-world
+reordering come from?
+<details><summary>Answer</summary>Parallel paths: ECMP load balancing, link bonding, and
+multi-queue NICs. Packets of one flow taking different paths can arrive out of order.
+Routers hash flows onto one path precisely to avoid this.</details>
+
+### 3. Fragmentation multiplies loss
+*(Continues from exercise 2's qdisc. If you start here, use `tc qdisc add` instead of `change`.)*
+
+**Concept:** UDP doesn't split data into segments the way TCP does. A datagram bigger than the
+link MTU is split by IP into **fragments**, and losing any one fragment loses the whole
+datagram. That's why DNS and QUIC work hard to stay under the path MTU.
+
+**Try it:**
+```bash
+sudo ip netns exec router tc qdisc change dev r-b root netem loss 10%
+sudo ip netns exec lan-a tcpdump -ni a-eth0 -v 'host 192.168.20.10' -c 6       # terminal 2
+sudo ip netns exec lan-a ./build/udp-ping/udp_ping 192.168.20.10 -c 400 -i 10 -s 1472
+sudo ip netns exec lan-a ./build/udp-ping/udp_ping 192.168.20.10 -c 400 -i 10 -s 1473
 sudo ip netns exec router tc qdisc del dev r-b root
 ```
-Compare the loss and jitter it reports with what you configured. Then try `-s 1472` against
-`-s 1473` on a 1500-byte link and watch with tcpdump: the larger probe leaves as two IP
-fragments. Compare that with how TCP behaves in the casebook's MTU black-hole case.
+**What you should see:** a 1473-byte probe leaves as two packets: tcpdump shows `flags [+]`
+(more fragments) and then a fragment `offset`. Loss rises from about 10% to about 19%.
+
+**Why:** 1472 + 8 (UDP) + 20 (IP) = 1500, exactly the MTU. One more byte and the probe
+doesn't fit, so it's fragmented. With each fragment independently surviving 90% of the time,
+the datagram survives only 0.9 × 0.9 = 81%.
+
+**Check yourself:** if a datagram is split into 5 fragments on a 2%-loss path, what fraction
+of datagrams is lost?
+<details><summary>Answer</summary>1 − 0.98⁵ ≈ 9.6%: nearly five times the packet loss rate.</details>
 
 ## Sample output
 Loopback on macOS while building this. Run it across the lab or a real path for interesting numbers.

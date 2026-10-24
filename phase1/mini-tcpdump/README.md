@@ -41,6 +41,115 @@ To avoid sudo for live capture: `sudo setcap cap_net_raw,cap_net_admin=eip build
 | `handshake_ms` | SYN→SYN-ACK and SYN-ACK→ACK | which side of the capture point the latency is on |
 | `state` | `syn_unanswered`, `refused`, `synack_unacked`, `open`, `half_closed`, `closed`, `reset`, `midstream*` | how the connection went |
 
+## Exercises (in the netns lab)
+Lab up (`sudo ../netns-router/setup.sh`), and an HTTP server on the host playing "the internet":
+```bash
+head -c 2000000 /dev/urandom > /tmp/big.bin
+python3 -m http.server 8000 --bind 192.168.255.1 --directory /tmp &
+MTD=$PWD/build/mini-tcpdump/mini-tcpdump
+```
+
+### 1. BPF filters run in the kernel
+**Concept:** a capture filter like `tcp port 443` is compiled to **BPF** bytecode and runs
+*in the kernel*. Packets that don't match are never copied to your program. The kernel
+also counts packets it had to **drop** because your program fell behind. Those are gaps in
+your capture, not network loss.
+
+**Try it:**
+```bash
+sudo $MTD -i ens5 -c 10 'tcp[tcpflags] & tcp-syn != 0'       # only SYN and SYN-ACK packets
+curl -so /dev/null https://example.com                        # another terminal: make some connections
+sudo $MTD -i ens5 -q -c 20000                                 # everything; watch the last stderr line
+```
+**What you should see:** the first command prints only `Flags [S]` and `[S.]` lines, from your
+curl and from anything else on the box that opens connections. The second ends with `N packets received by filter,
+M dropped by kernel`.
+
+**Why:** the filter reads raw header bytes (`tcp[13]` is the flags byte) before anything
+reaches user space, which is how tcpdump keeps up with fast links.
+
+**Check yourself:** your summary shows retransmissions, but the kernel reported drops. Can
+you trust the retransmission count?
+<details><summary>Answer</summary>Not fully. Missed packets create apparent sequence gaps, so a
+later normal segment can look out of order, and you may miss real retransmissions. Fix the
+capture first (filter tighter, bigger buffer, write with <code>-w</code> and analyze offline).</details>
+
+### 2. Loss: retransmissions vs duplicate ACKs
+**Concept:** when a segment is lost, the receiver keeps acknowledging the last byte it got
+in order. These are **duplicate ACKs**. Three of them trigger **fast retransmit**: the
+sender re-sends without waiting for its timeout (RTO).
+
+**Try it:**
+```bash
+sudo ip netns exec router tc qdisc add dev r-a root netem loss 3%
+sudo ip netns exec lan-a $MTD -i a-eth0 -q -w /tmp/loss.pcap --json /tmp/loss.json &
+sudo ip netns exec lan-a curl -so /dev/null http://192.168.255.1:8000/big.bin
+sudo pkill -INT -f "mini-tcpdump -i a-eth0"
+sudo ip netns exec router tc qdisc del dev r-a root
+$MTD -r /tmp/loss.pcap -q
+```
+**What you should see:** in the flow line, the server→client `retrans` count is in the dozens,
+and `loss.json` shows non-zero client `dup_acks`. (A dup ACK only counts when the advertised
+window is also unchanged, the same rule Wireshark uses, so the count depends on how the
+client's receive buffer was growing.) The state is still `closed`: the download
+finished, just slower.
+
+**Why:** netem on `r-a` drops the server's data on its way to lan-a. The client sees the gap
+and sends dup ACKs; the retransmitted copy arrives later with an old sequence number, which is
+what the analyzer counts.
+
+**Check yourself:** the capture is on the client, but the retransmissions are the server's.
+How can the client's capture show *server* retransmissions at all?
+<details><summary>Answer</summary>The client receives the re-sent copy. Its sequence number is
+below the highest one already seen from the server, because later segments arrived first. So
+"retransmission" here means "old data arriving again", whoever sent it.</details>
+
+### 3. Where is the latency? Vantage point matters
+**Concept:** a capture point splits the path in two. The handshake shows each half: **SYN →
+SYN-ACK** is the round trip to the server's side of the capture point, and **SYN-ACK → ACK**
+is the round trip to the client's side.
+
+**Try it:** add 100 ms on the router's link to lan-a and capture at two points at once.
+```bash
+sudo ip netns exec router tc qdisc add dev r-a root netem delay 100ms
+sudo ip netns exec lan-a  $MTD -i a-eth0 -q --json /tmp/at-client.json 'tcp port 8000' &
+sudo ip netns exec router $MTD -i r-up  -q --json /tmp/at-router.json 'tcp port 8000' &
+sudo ip netns exec lan-a curl -so /dev/null http://192.168.255.1:8000/
+sleep 1; sudo pkill -INT -f mini-tcpdump
+sudo ip netns exec router tc qdisc del dev r-a root
+python3 -c "import json; [print(f, json.load(open(f))['tcp']['flows'][0]['handshake_ms']) for f in ('/tmp/at-client.json', '/tmp/at-router.json')]"
+```
+**What you should see:** at the client, `syn_to_synack` ≈ 100 ms and `synack_to_ack` ≈ 0. At
+the router uplink it's the other way round: `syn_to_synack` ≈ 0 and `synack_to_ack` ≈ 100 ms.
+
+**Why:** the delay sits between the router and lan-a. From the client, the wait is for the
+SYN-ACK to arrive. From the router, the SYN-ACK passes immediately, and the wait is for the
+client's ACK to come back through the slow link.
+
+**Check yourself:** the help desk captures on the server and sees `synack_to_ack` = 300 ms.
+Whose network should they look at?
+<details><summary>Answer</summary>The client's side: the server answered instantly, and the
+delay is between the server and the client. This is why the casebook records capture points.</details>
+
+### 4. Zero windows and TLS, from captures you already know
+**Concept:** the analyzer turns raw signals into named facts. Check that it agrees with what
+you caused.
+
+**Try it:**
+- Repeat the echo-server backpressure exercise (`../echo-server/README.md`, exercise 3) while
+  running `sudo $MTD -i lo -q 'tcp port 9000'`. Expect `zero_windows` > 0 in **both** directions.
+- In lan-a, capture `tcp port 443` while running `curl -so /dev/null https://example.com`, then
+  `curl --tls-max 1.2 ...`. Expect the SNI `example.com` both times, with version `TLS1.3` and then `TLS1.2`.
+
+**Why:** the SNI (the hostname) travels in the *unencrypted* ClientHello, because the server
+needs it to pick a certificate before any keys exist. Everything after the handshake is
+ciphertext.
+
+**Check yourself:** what would make the SNI invisible to mini-tcpdump?
+<details><summary>Answer</summary>Encrypted Client Hello (ECH), where the real ClientHello is
+encrypted with a key the server publishes in DNS. A middlebox then sees only an outer,
+generic name.</details>
+
 ## Sample output
 <!-- Paste a real capture summary, and the packets/sec line from a large `-r` run, here. -->
 ```
