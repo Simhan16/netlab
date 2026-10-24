@@ -6,6 +6,7 @@ in this repo are in [CLAUDE.md](CLAUDE.md).
 
 ```
 phase1/                         network fundamentals (~12 weeks)
+├── tcpdump-basics/ 1.0  start here: MAC/IP/port addressing, reading tcpdump, Wireshark on the Mac
 ├── netns-router/   1.1  two LANs + router + NAT + firewall in network namespaces (bash)
 ├── common/              shared C++: RAII fd, socket helpers, bounds-checked byte reader, test macros
 ├── echo-server/    1.2  blocking → epoll TCP echo server, bench client
@@ -36,6 +37,7 @@ macOS builds everything except `echo_server_epoll`. The netns lab and live captu
 ## Status
 | Step | Built | Verified on | Still to do |
 |---|---|---|---|
+| 1.0 tcpdump-basics | ✅ | practice.pcap checked with tcpdump + tshark on macOS | exercise 5 on EC2 |
 | 1.1 netns-router | ✅ | syntax only (needs Linux) | run on EC2, paste `test.sh` output into its README |
 | 1.2 echo-server | ✅ | blocking server + client on macOS | epoll server on Linux; bench numbers from EC2 |
 | 1.3 dns-resolver, udp-ping | ✅ | live queries + `+trace` + unit tests on macOS | |
