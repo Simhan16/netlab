@@ -1,0 +1,10 @@
+cmake_minimum_required(VERSION 3.16)
+project(udp_ping LANGUAGES CXX)
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/netlab.cmake)
+
+add_executable(udp_ping src/client.cpp)
+add_executable(udp_pong src/server.cpp)
+foreach(t udp_ping udp_pong)
+  target_link_libraries(${t} PRIVATE netlab_common)
+  netlab_warnings(${t})
+endforeach()

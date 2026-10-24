@@ -1,0 +1,32 @@
+# PacketWhisperer behind Caddy (automatic HTTPS via Let's Encrypt).
+#   cp .env.example .env   # fill it in
+#   docker compose up -d --build
+services:
+  packetwhisperer:
+    build:
+      context: ../..
+      dockerfile: phase2/deploy/Dockerfile
+    env_file: .env
+    volumes:
+      - pw-data:/data          # usage.jsonl lives here: back it up, it's your impact data
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.8
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PW_DOMAIN: ${PW_DOMAIN:?set PW_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - packetwhisperer
+    restart: unless-stopped
+
+volumes:
+  pw-data:
+  caddy-data:

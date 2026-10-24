@@ -1,0 +1,9 @@
+**/build
+**/.venv
+**/__pycache__
+**/*.egg-info
+**/*.pcap
+**/.env
+.git
+phase1/casebook
+phase2/packetwhisperer/evals

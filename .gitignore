@@ -1,0 +1,17 @@
+# builds
+phase1/build/
+phase2/packetwhisperer/build/
+*.egg-info/
+__pycache__/
+.venv/
+*.so
+
+# local state and secrets
+.env
+usage.jsonl
+phase2/packetwhisperer/evals/results/*
+!phase2/packetwhisperer/evals/results/.gitkeep
+phase2/packetwhisperer/evals/synthetic/
+.DS_Store
+.pytest_cache/
+.ruff_cache/
