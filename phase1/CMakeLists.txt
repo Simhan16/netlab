@@ -4,6 +4,7 @@ project(netlab_phase1 LANGUAGES CXX)
 
 include(cmake/netlab.cmake)
 
+add_subdirectory(socket-basics)
 add_subdirectory(echo-server)
 add_subdirectory(dns-resolver)
 add_subdirectory(udp-ping)

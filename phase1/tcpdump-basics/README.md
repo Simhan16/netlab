@@ -490,6 +490,7 @@ come from (netns-router exercise 4, casebook case 03). If your instance shows 14
 ---
 
 ## What's next
+- **socket-basics (1.0b):** write the clients and servers that make this traffic, then capture them.
 - **netns-router (1.1):** build your own LAN, router and gateway, and watch ARP, MACs and TTLs change across it.
 - **echo-server (1.2):** write the program at one end of a TCP connection and capture its handshake.
 - **mini-tcpdump (1.4):** write your own tcpdump in C++. Reading this chapter's hex dump is its starting point.
