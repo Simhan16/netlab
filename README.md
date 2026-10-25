@@ -13,6 +13,7 @@ phase1/                         network fundamentals (~12 weeks)
 ├── echo-server/    1.2  blocking → epoll TCP echo server, bench client
 ├── dns-resolver/   1.3  dnsq: hand-built DNS packets, TCP fallback, iterative +trace from the root
 ├── udp-ping/       1.3  UDP latency/jitter/loss probe + echo server
+├── http-proxies/   1.3b HTTP/1.1 framing, HTTPS + SNI, forward/reverse proxies; build a client, forward proxy, load balancer
 ├── mini-tcpdump/   1.4  libpcap capture + full decode + per-flow TCP health  ← flagship C++
 ├── casebook/       1.5  10 fault-injection cases → labeled pcaps (the Phase 2 eval set)
 ├── overlays/       1.6  advanced: VLANs + bridges, GRE, VXLAN, WireGuard, overlay MTU and MSS clamping
@@ -40,11 +41,12 @@ for the lab and live capture). Build once per machine: `cd phase1 && cmake -B bu
 | 3 | [netns-router](phase1/netns-router/README.md) | 🐧 | `sudo ./setup.sh && sudo ./test.sh`, then exercises 1-4 | `test.sh` passes, and you can explain why each exercise broke what it broke. Paste the output into its README |
 | 4 | [echo-server](phase1/echo-server/README.md) | 🍎 ex. 1-2, 🐧 ex. 3-4 | read `echo_server_blocking.cpp` (socket-basics step 3, grown up), then `echo_server_epoll.cpp` (step 6 with epoll); exercises 1-4 | you've annotated a handshake capture and seen both zero windows in exercise 3 |
 | 5 | [dns-resolver](phase1/dns-resolver/README.md) | 🍎 or 🐧 | read `src/dns.cpp` (wire format), exercises 1-4 | you can explain a `+trace` run hop by hop |
-| 6 | [udp-ping](phase1/udp-ping/README.md) | 🐧 (the lab) | exercises 1-3 with netem | your measured loss and RTT match what you injected, and you can say why exercise 3's loss nearly doubles |
-| 7 | [mini-tcpdump](phase1/mini-tcpdump/README.md) | 🍎 `-r` on files, 🐧 live | read `src/core/` layer by layer, then exercises 1-4 | its per-flow report matches what you see in Wireshark for the same pcap |
-| 8 | [casebook](phase1/casebook/README.md) | 🐧 | `sudo casebook/run_case.sh all 5` (5 runs per case, so the evals can hold some out); for each case, diagnose the capture yourself *before* reading `diagnoses/<case>.md` | `labels.json` has 50 captures, and you've added your own observations to each diagnosis |
-| 9 | [overlays](phase1/overlays/README.md) | 🐧 | advanced, and it can run alongside Phase 2: `sudo ./setup.sh`, then exercises 1-4 (VLANs), then 5-9, switching tunnels with `./tunnel.sh` | `test.sh` passes in all four tunnel modes, and you can draw each tunnel's headers and explain its MTU |
-| 10 | [enterprise](phase1/enterprise/README.md) | 🐧 + Docker (t3.large or bigger) | `./lab.sh up && ./lab.sh test`, exercises 1-8, then help desk tickets 1-5 *without* opening the answers | `./lab.sh test` passes, and you've solved all five tickets from symptoms alone, each with a written root cause |
+| 6 | [http-proxies](phase1/http-proxies/README.md) | 🍎 or 🐧 | Parts 1-2, exercises 1-7, and build steps 1-3 where the exercises say | `python3 check.py all` passes on *your* code, and you can say which hop sent any 4xx/5xx |
+| 7 | [udp-ping](phase1/udp-ping/README.md) | 🐧 (the lab) | exercises 1-3 with netem | your measured loss and RTT match what you injected, and you can say why exercise 3's loss nearly doubles |
+| 8 | [mini-tcpdump](phase1/mini-tcpdump/README.md) | 🍎 `-r` on files, 🐧 live | read `src/core/` layer by layer, then exercises 1-4 | its per-flow report matches what you see in Wireshark for the same pcap |
+| 9 | [casebook](phase1/casebook/README.md) | 🐧 | `sudo casebook/run_case.sh all 5` (5 runs per case, so the evals can hold some out); for each case, diagnose the capture yourself *before* reading `diagnoses/<case>.md` | `labels.json` has 50 captures, and you've added your own observations to each diagnosis |
+| 10 | [overlays](phase1/overlays/README.md) | 🐧 | advanced, and it can run alongside Phase 2: `sudo ./setup.sh`, then exercises 1-4 (VLANs), then 5-9, switching tunnels with `./tunnel.sh` | `test.sh` passes in all four tunnel modes, and you can draw each tunnel's headers and explain its MTU |
+| 11 | [enterprise](phase1/enterprise/README.md) | 🐧 + Docker (t3.large or bigger) | `./lab.sh up && ./lab.sh test`, exercises 1-8, then help desk tickets 1-5 *without* opening the answers | `./lab.sh test` passes, and you've solved all five tickets from symptoms alone, each with a written root cause |
 
 Two habits for every stage after 1:
 - **Capture it.** Whenever a program sends something, watch it with tcpdump or Wireshark. The
@@ -52,14 +54,14 @@ Two habits for every stage after 1:
 - **Answer the "check yourself" questions before opening the answers.** They're the part
   interviewers ask about.
 
-### Phase 2: the FDE project (needs stage 8's captures)
+### Phase 2: the FDE project (needs stage 9's captures)
 | # | Part | Where | Do | Done when |
 |---|---|---|---|---|
-| 11 | [PacketWhisperer](phase2/packetwhisperer/README.md) | 🍎 or 🐧 | set it up, `pytest`, then diagnose a few casebook pcaps with the rules engine only (no API key) | tests pass, and you know which casebook cases the rules get right |
-| 12 | [evals](phase2/packetwhisperer/evals/README.md) | 🐧 | rules baseline on the real casebook, then one LLM run (it costs API credits: check the README first) | per-label accuracy numbers recorded, from real runs only |
-| 13 | [deploy](phase2/deploy/README.md) | 🐧 | `docker compose up` behind Caddy, then Slack alerts | the service answers over HTTPS from your laptop |
-| 14 | [pilot](phase2/deploy/PILOT.md) | n/a | find one real user and scope a problem with them | they've used it on a real problem at least once |
-| 15 | [case study](phase2/CASE_STUDY.md) | n/a | fill in every `[X]` from measured numbers | no placeholders left. Then update the resume entry in CLAUDE.md |
+| 12 | [PacketWhisperer](phase2/packetwhisperer/README.md) | 🍎 or 🐧 | set it up, `pytest`, then diagnose a few casebook pcaps with the rules engine only (no API key) | tests pass, and you know which casebook cases the rules get right |
+| 13 | [evals](phase2/packetwhisperer/evals/README.md) | 🐧 | rules baseline on the real casebook, then one LLM run (it costs API credits: check the README first) | per-label accuracy numbers recorded, from real runs only |
+| 14 | [deploy](phase2/deploy/README.md) | 🐧 | `docker compose up` behind Caddy, then Slack alerts | the service answers over HTTPS from your laptop |
+| 15 | [pilot](phase2/deploy/PILOT.md) | n/a | find one real user and scope a problem with them | they've used it on a real problem at least once |
+| 16 | [case study](phase2/CASE_STUDY.md) | n/a | fill in every `[X]` from measured numbers | no placeholders left. Then update the resume entry in CLAUDE.md |
 
 ## Quick start (Ubuntu, e.g. the EC2 box)
 ```bash
@@ -83,6 +85,7 @@ macOS builds everything except `echo_server_epoll`. The netns lab and live captu
 | 1.0b socket-basics | ✅ | all 28 checks pass on the solutions (macOS); 11 deliberately broken versions each caught by the intended check | run `check.py all --solution` on Linux |
 | 1.1 netns-router | ✅ | syntax only (needs Linux) | run on EC2, paste `test.sh` output into its README |
 | 1.2 echo-server | ✅ | blocking server + client on macOS | epoll server on Linux; bench numbers from EC2 |
+| 1.3b http-proxies | ✅ | all 18 checks pass on the solutions (macOS); 12 deliberately broken versions each caught; exercise outputs are real runs | |
 | 1.3 dns-resolver, udp-ping | ✅ | live queries + `+trace` + unit tests on macOS | |
 | 1.4 mini-tcpdump | ✅ | unit tests, `-r` on generated pcaps | live capture on EC2; packets/sec on a big pcap |
 | 1.5 casebook | ✅ scripts | syntax only | **run it**: `labels.json` is empty until you do |
